@@ -1,6 +1,6 @@
 ---
-title: "Causal final"
-author: "Tina Chen"
+title: "Causal Inference Capstone"
+author: "Tina Chen, Cynthia Zhang"
 date: "2024-11-13"
 output: html_document
 ---
@@ -10,21 +10,14 @@ knitr::opts_chunk$set(echo = TRUE)
 #install.packages("devtools")  
 #devtools::install_github("ChihYuChiang/dlsr")
 library(dlsr)
+library(MASS)
+library(dplyr)
+library(stringr)
 ```
 
+Currently, we recreate the simulation process that has been done in the paper https://home.uchicago.edu/ourminsky/Variable_Selection.pdf. 
 
-
-
-### Will add 
-```{r}
-# add interaction with X (not sure Z should interact with X or Z )
-
-# add non linearity
-
-# smaller beta
-```
-
-
+We first generate a multivariate normal distribution $Z \sim N(0, 1)$ to get the initial variable $Z_{i1} … Z_{ik}$. The correlation between $Z_{i1}$ and $Z_ik$ is $0.7^{|k-1|}$. Then we set the covariate $W_{ik} = Z_{ik}$ for $k ≤ K/2$ and $W_{ik} = 1 (Z_{ik} > 0)$ for $k > K/2$ where $1(Z_{ik} > 0)$ is a indicator function. K is the number of initial variable Z, which is also the number of covariate W. Researching on the causal relationship between dependent variable Y and treatment variable X, we set the truth as $β_1 = 0.5$, coefficients of covariates $W_{i1}$ and $W_{i, K/2+1}$ are 1, and the coefficient of the rest of covariates are 0. So, ideally, the number of variables selected should be 2.
 
 
 ### try double lasso and fit in linear model
@@ -69,7 +62,7 @@ test <- str_c("V", 1:K)
 df_select <- doubleLassoSelect(df = df, outcome = "Y", treatment = "X", test = test)
 
 # Count selected variables
-selected_vars_count[sim] <- ncol(df_select) - 2 
+selected_vars_count <- ncol(df_select) - 2 
 
 model_lm <- lm(Y~., data=df_select)
 summary(model_lm)
@@ -79,7 +72,10 @@ model_full_lm <- lm(Y~., data=df)
 summary(model_full_lm)
 ```
 
-
+In the first simulation study we have done, we uses 40 covariates (K = 40) in the model. The theoretical model is:
+$$Y_i = β_0 + β_1X_i + β_2W_{i1} + β_3W_{i2} + … + β_{41}W_{i,40} + ε_i$$
+where $ε_i$ is the error term which is i.i.d with the normal distribution N(0, 1)
+Then we applied this model to the simulated data which has 60 observations for 1000 times and the covariates are respectively correlated to $W_{i1}$. After applying double-lasso variable selection, the number of variables that are being selected is 1.17.
 
 ```{r}
 set.seed(451)
@@ -137,12 +133,9 @@ result_raw <- simulation(n = 60, K = 40, beta_1 = 0.5, beta_k = beta_k, n_simula
 
 
 
-
-
-
-
-
-
+In the second simulation study, we uses the same model as before
+$$Y_i = β_0 + β_1X_i + β_2W_{i1} + β_3W_{i2} + … + β_{41}W_{i,40} + ε_i$$
+The simulated data for this study is basically the same as before, but we additionally set the treatment variable X is associated with one of the covariates $W_{i1}$. After we applied double-lasso, the number of variables that are being selected is 1.24.
 
 ```{r}
 set.seed(451)
@@ -206,10 +199,9 @@ print(result_x_included)
 
 
 
-
-
-
-
+In the third simulation study, we involve in a interaction term between treatment variable X and the covariate $W_{i1}$. The model is:
+$$Y_i = β_0 + β_1X_i + β_2W_{i1} + β_3W_{i2} + … + β_{41}W_{i,40} + β_{42}X_i*W_{i1} + ε_i$$
+The simulated data is basically the same as the data in the simulation study 1, additionally having the interaction term affect the outcome variable Y. After we applied double-lasso, the number of variables that are being selected is 1.645. 
 
 ```{r}
 
@@ -246,7 +238,7 @@ simulation <- function(n , K , beta_1 , beta_k, n_simulations ) {
     interact_term <- X * W[, 1]
     beta_interact <- 0.2  
     # Y <- beta_1 * X + W %*% beta_k + epsilon
-    Y <- beta_0 + beta_1 * X + W %*% beta_k + beta_interact * interact_term + epsilon
+    Y <- 0 + beta_1 * X + W %*% beta_k + beta_interact * interact_term + epsilon
     
     #  data frame
     df <- W %>%
@@ -277,6 +269,13 @@ print(result_interaction)
 ```
 
 
+### Next step
+For the future plan, we will add more introduction on double lasso series. We will also add more simulation studies to play around this method.
+```{r}
+# add non linearity
+
+# Modify beta coefficient, sample size, K
+```
 
 
 
