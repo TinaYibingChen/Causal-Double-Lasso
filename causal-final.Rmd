@@ -1,0 +1,532 @@
+---
+title: "Causal Inference Capstone"
+author: "Tina Chen, Cynthia Zhang"
+date: "2024-11-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#install.packages("devtools")  
+#devtools::install_github("ChihYuChiang/dlsr")
+library(dlsr)
+library(MASS)
+library(dplyr)
+library(stringr)
+```
+
+Currently, we recreate the simulation process that has been done in the paper https://home.uchicago.edu/ourminsky/Variable_Selection.pdf. 
+
+We first generate a multivariate normal distribution $Z \sim N(0, 1)$ to get the initial variable $Z_{i1} … Z_{ik}$. The correlation between $Z_{i1}$ and $Z_ik$ is $0.7^{|k-1|}$. Then we set the covariate $W_{ik} = Z_{ik}$ for $k ≤ K/2$ and $W_{ik} = 1 (Z_{ik} > 0)$ for $k > K/2$ where $1(Z_{ik} > 0)$ is a indicator function. K is the number of initial variable Z, which is also the number of covariate W. Researching on the causal relationship between dependent variable Y and treatment variable X, we set the truth as $β_1 = 0.5$, coefficients of covariates $W_{i1}$ and $W_{i, K/2+1}$ are 1, and the coefficient of the rest of covariates are 0. So, ideally, the number of variables selected should be 2.
+
+
+### try double lasso and fit in linear model
+
+## for every function, fit a lienar model to see whether it is unbiased or not
+
+```{r}
+set.seed(451)
+n = 300
+K = 20
+beta_1 = 0.5
+
+beta_k <- rep(0, K)
+beta_k[1] <- 1
+beta_k[K / 2 + 1] <- 1
+
+X <- sample(c(rep(1, n / 2), rep(0, n / 2)))
+
+# Generate covariate matrix Z
+mu <- rep(0, K)
+Sigma <- matrix(0, nrow = K, ncol = K)
+for (i in 1:K) {
+  for (j in 1:K) {
+    Sigma[i, j] <- 0.7^(abs(i - j))  # Correlation = 0.7
+  }
+}
+Z <- mvrnorm(n, mu = mu, Sigma = Sigma)
+
+# Construct W matrix
+W <- Z
+W[, (K / 2 + 1):K] <- as.numeric(Z[, (K / 2 + 1):K] > 0)
+
+# Generate outcome variable Y
+epsilon <- rnorm(n, 0, 1)
+Y <- beta_1 * X + W %*% beta_k + epsilon
+
+#  data frame
+df <- W %>%
+  as.data.frame() %>%
+  mutate(X = X, Y = Y)
+
+# Perform double Lasso selection
+test <- str_c("V", 1:K)
+df_select <- doubleLassoSelect(df = df, outcome = "Y", treatment = "X", test = test)
+
+# Count selected variables
+selected_vars_count <- ncol(df_select) - 2 
+
+model_lm <- lm(Y~., data=df_select)
+summary(model_lm)
+
+
+model_full_lm <- lm(Y~., data=df)
+summary(model_full_lm)
+```
+```{r}
+# function to generate W
+generate_W <- function(K, n, correlation = 0.7) {
+  # Create mean vector and covariance matrix
+  mu <- rep(0, K)
+  Sigma <- matrix(0, nrow = K, ncol = K)
+  
+  # Fill the covariance matrix with the specified correlation
+  for (i in 1:K) {
+    for (j in 1:K) {
+      Sigma[i, j] <- correlation^(abs(i - j))
+    }
+  }
+  
+  # Generate the multivariate normal random variables
+  Z <- mvrnorm(n, mu = mu, Sigma = Sigma)
+  
+  # Construct W matrix
+  W <- Z
+  W[, (K / 2 + 1):K] <- as.numeric(Z[, (K / 2 + 1):K] > 0)
+
+  return(W)
+}
+
+```
+
+
+
+
+In the first simulation study we have done, we uses 40 covariates (K = 40) in the model. The theoretical model is:
+$$Y_i = β_0 + β_1X_i + β_2W_{i1} + β_3W_{i2} + … + β_{41}W_{i,40} + ε_i$$
+where $ε_i$ is the error term which is i.i.d with the normal distribution N(0, 1)
+Then we applied this model to the simulated data which has 60 observations for 1000 times and the covariates are respectively correlated to $W_{i1}$. After applying double-lasso variable selection, the number of variables that are being selected is 1.17.
+
+```{r}
+
+set.seed(451)
+# Define the simulation function
+Base_simulation <- function(n , K , beta_1 , beta_k, n_simulations ) {
+  
+  #selected_vars_count <- rep(0, n_simulations)
+  selected_vars <- list()
+  coef <- rep(0,K) 
+  for (sim in 1:n_simulations) {
+    # Generate treatment variable X
+    X <- sample(c(rep(1, n / 2), rep(0, n / 2)))
+    
+    # # Generate covariate matrix Z
+    # mu <- rep(0, K)
+    # Sigma <- matrix(0, nrow = K, ncol = K)
+    # for (i in 1:K) {
+    #   for (j in 1:K) {
+    #     Sigma[i, j] <- 0.7^(abs(i - j))  # Correlation = 0.7
+    #   }
+    # }
+    # Z <- mvrnorm(n, mu = mu, Sigma = Sigma)
+    # 
+    # # Construct W matrix
+    # W <- Z
+    # W[, (K / 2 + 1):K] <- as.numeric(Z[, (K / 2 + 1):K] > 0)
+    
+    W <- generate_W(K, n, correlation = 0.7)
+    
+    
+    # Generate outcome variable Y
+    epsilon <- rnorm(n, 0, 1)
+    Y <- beta_1 * X + W %*% beta_k + epsilon
+    
+    #  data frame
+    df <- W %>%
+      as.data.frame() %>%
+      mutate(X = X, Y = Y)
+    
+    # Perform double Lasso selection
+    test <- str_c("V", 1:K)
+    df_select <- doubleLassoSelect(df = df, outcome = "Y", treatment = "X", test = test)
+    selected_vars[[sim]] <- names(df_select)[-c(1)] # exclude Y
+    model_lm <- lm(Y~., data=df_select)
+    lm_summary <- summary(model_lm)
+    coef[sim] <- lm_summary$coefficients[2,1]
+
+
+  }
+  selected_vars <- unlist(selected_vars)
+  selected_vars_count <- table(selected_vars)
+  print(selected_vars_count)
+  print(mean(coef))
+  }
+
+  
+
+result_raw <- Base_simulation(n , K , beta_1 , beta_k , n_simulations = 100)
+
+
+
+```
+
+
+
+In the second simulation study, we uses the same model as before
+$$Y_i = β_0 + β_1X_i + β_2W_{i1} + β_3W_{i2} + … + β_{41}W_{i,40} + ε_i$$
+The simulated data for this study is basically the same as before, but we additionally set the treatment variable X is associated with one of the covariates $W_{i1}$. After we applied double-lasso, the number of variables that are being selected is 1.24.
+
+```{r}
+set.seed(451)
+# A function that X is a function of W_1
+X_1_simulation <- function(n , K , beta_1 , beta_k, n_simulations ) {
+  
+  #selected_vars_count <- rep(0, n_simulations)
+  selected_vars <- list()
+  coef <- rep(0,K)
+  
+  for (sim in 1:n_simulations) {
+    # Generate covariate matrix X
+    W <- generate_W(K, n, correlation = 0.7)
+    
+    # Generate outcome variable Y
+    epsilon <- rnorm(n, 0, 1)
+    X <- rbinom(n, 1, prob = plogis(W[, 1]))    # X is now a function of W_1
+    Y <- beta_1 * X + W %*% beta_k + epsilon
+    
+    #  data frame
+    df <- W %>%
+      as.data.frame() %>%
+      mutate(X = X, Y = Y)
+    
+    # Perform double Lasso selection
+    test <- str_c("V", 1:K)
+    df_select <- doubleLassoSelect(df = df, outcome = "Y", treatment = "X", test = test)
+    selected_vars[[sim]] <- names(df_select)[-c(1)] # exclude Y
+    model_lm <- lm(Y~., data=df_select)
+    lm_summary <- summary(model_lm)
+    coef[sim] <- lm_summary$coefficients[2,1]
+
+
+  }
+  selected_vars <- unlist(selected_vars)
+  selected_vars_count <- table(selected_vars)
+  print(selected_vars_count)
+  print(mean(coef))
+
+  
+
+
+}
+
+
+
+result_x_included <- X_1_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
+
+
+```
+
+
+
+```{r}
+## Simulation 2.2
+# W3 partially causes X
+
+set.seed(451)
+# A function that X is a function of W_1
+X_3_simulation <- function(n , K , beta_1 , beta_k, n_simulations ) {
+  
+  #selected_vars_count <- rep(0, n_simulations)
+  selected_vars <- list()
+  coef <- rep(0,K)
+  
+  for (sim in 1:n_simulations) {
+      
+    W <- generate_W(K, n, correlation = 0.7)
+    # Generate outcome variable Y
+    epsilon <- rnorm(n, 0, 1)
+
+    X <- rbinom(n, 1, prob = plogis(W[, 3]))
+    Y <- beta_1 * X + W %*% beta_k + epsilon
+    
+    #  data frame
+    df <- W %>%
+      as.data.frame() %>%
+      mutate(X = X, Y = Y)
+    
+    # Perform double Lasso selection
+    test <- str_c("V", 1:K)
+    df_select <- doubleLassoSelect(df = df, outcome = "Y", treatment = "X", test = test)
+    selected_vars[[sim]] <- names(df_select)[-c(1)] # exclude Y
+    model_lm <- lm(Y~., data=df_select)
+    lm_summary <- summary(model_lm)
+    coef[sim] <- lm_summary$coefficients[2,1]
+
+
+  }
+  selected_vars <- unlist(selected_vars)
+  selected_vars_count <- table(selected_vars)
+  print(selected_vars_count)
+  print(mean(coef))
+
+  
+
+
+}
+
+
+
+result_x_included <- X_3_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
+
+
+```
+
+
+
+In the third simulation study, we involve in a interaction term between treatment variable X and the covariate $W_{i1}$. The model is:
+$$Y_i = β_0 + β_1X_i + β_2W_{i1} + β_3W_{i2} + … + β_{41}W_{i,40} + β_{42}X_i*W_{i1} + ε_i$$
+The simulated data is basically the same as the data in the simulation study 1, additionally having the interaction term affect the outcome variable Y. After we applied double-lasso, the number of variables that are being selected is 1.645. 
+
+```{r}
+#simulation 3.1
+# interaction between x and W1
+set.seed(451)
+# A function that X is a function of W_1
+inter_x_w1_simulation <- function(n , K , beta_1 , beta_k, n_simulations ) {
+  
+  # selected_vars_count <- rep(0, n_simulations)
+  selected_vars <- list()
+  coef <- rep(0,K)
+  for (sim in 1:n_simulations) {
+    W <- generate_W(K, n, correlation = 0.7)
+    
+    # Generate outcome variable Y
+    epsilon <- rnorm(n, 0, 1)
+
+    # X is now a function of W_3
+    X <- rbinom(n, 1, prob = plogis(W[, 1]))
+    
+    # add interaction term: interact with X
+    interact_term <- X * W[, 1]
+    beta_interact <- 0.2  
+
+    Y <- 0 + beta_1 * X + W %*% beta_k + beta_interact * interact_term + epsilon
+    
+    #  data frame
+    df <- W %>%
+      as.data.frame() %>%
+      mutate(X = X, Y = Y, interact = interact_term)
+    
+       # Perform double Lasso selection
+    interaction_terms <- combn(K, 2, simplify = TRUE)
+    interaction_strs <- apply(interaction_terms, 2, function(x) str_c("V", x[1], ":", "V", x[2], sep = ""))
+    test <- c(str_c("V", 1:K), interaction_strs)  # Include both main effects and interactions
+    
+    df_select <- doubleLassoSelect(df = df, outcome = "Y", treatment = "X", test = test)
+    selected_vars[[sim]] <- names(df_select)[-c(1)] # exclude Y
+    model_lm <- lm(Y~., data=df_select)
+    lm_summary <- summary(model_lm)
+    coef[sim] <- lm_summary$coefficients[2,1]
+
+
+  }
+  selected_vars <- unlist(selected_vars)
+  selected_vars_count <- table(selected_vars)
+  print(selected_vars_count)
+  print(mean(coef))
+
+}
+
+
+
+result_interaction_x_w1 <- inter_x_w1_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
+
+
+```
+
+
+
+
+```{r}
+
+#simulation 3.2
+# interaction between x and W3
+set.seed(451)
+# A function that X is a function of W_1
+inter_x_w3_simulation <- function(n , K , beta_1 , beta_k, n_simulations ) {
+  
+  # selected_vars_count <- rep(0, n_simulations)
+  selected_vars <- list()
+  coef <- rep(0,K)
+  for (sim in 1:n_simulations) {
+    W <- generate_W(K, n, correlation = 0.7)
+    
+    # Generate outcome variable Y
+    epsilon <- rnorm(n, 0, 1)
+
+    # X is now a function of W_1
+    X <- rbinom(n, 1, prob = plogis(W[, 1]))
+    
+    
+    # add interaction term: interact with X
+    interact_term <- X * W[, 3]
+    beta_interact <- 0.2  
+
+    Y <- 0 + beta_1 * X + W %*% beta_k + beta_interact * interact_term + epsilon
+    
+    #  data frame
+    df <- W %>%
+      as.data.frame() %>%
+      mutate(X = X, Y = Y, interact = interact_term)
+    
+       # Perform double Lasso selection
+    interaction_terms <- combn(K, 2, simplify = TRUE)
+    interaction_strs <- apply(interaction_terms, 2, function(x) str_c("V", x[1], ":", "V", x[2], sep = ""))
+    test <- c(str_c("V", 1:K), interaction_strs)  # Include both main effects and interactions
+    
+    
+    df_select <- doubleLassoSelect(df = df, outcome = "Y", treatment = "X", test = test)
+    selected_vars[[sim]] <- names(df_select)[-c(1)] # exclude Y
+    model_lm <- lm(Y~., data=df_select)
+    lm_summary <- summary(model_lm)
+    coef[sim] <- lm_summary$coefficients[2,1]
+
+
+  }
+  selected_vars <- unlist(selected_vars)
+  selected_vars_count <- table(selected_vars)
+  print(selected_vars_count)
+  print(mean(coef))
+
+}
+
+
+result_interaction_x_w3 <- inter_x_w3_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
+
+
+```
+
+### Next step
+For the future plan, we will add more introduction on double lasso series. We will also add more simulation studies to play around this method.
+```{r}
+# add non linearity
+
+# Modify beta coefficient, sample size, K
+```
+
+
+
+```{r}
+# since X is a treetment var, it doesn't make sense to have y= x+x^2+w, might cause multicollinearity
+
+#simulation 4.1
+# X^2
+set.seed(451)
+# A function that X is a function of W_1
+inter_qua_simulation <- function(n , K , beta_1 , beta_k, n_simulations ) {
+  
+  # selected_vars_count <- rep(0, n_simulations)
+  selected_vars <- list()
+  coef <- rep(0,K)
+  for (sim in 1:100) {
+    W <- generate_W(K, n, correlation = 0.7)
+    
+    # Generate outcome variable Y
+    epsilon <- rnorm(n, 0, 1)
+
+    # X is now a function of W_1
+    X <- rbinom(n, 1, prob = plogis(W[, 1]))
+    
+    
+    # add interaction term: interact with X
+    qua_term <- X * X
+    beta_qua <- 0.2  
+    Y <- 0 + beta_1 * X + W %*% beta_k + qua_term * beta_qua + epsilon
+    
+    #  data frame
+    df <- W %>%
+      as.data.frame() %>%
+      mutate(X = X, Y = Y, qua_term = qua_term)
+    
+       # Perform double Lasso selection
+    
+    test <- c(str_c("V", 1:K))  # Include both main effects and interactions
+    
+    
+    df_select <- doubleLassoSelect(df = df, outcome = "Y", treatment = c("X","qua_term"), test = test)
+    selected_vars[[sim]] <- names(df_select)[-c(1)] # exclude Y
+    model_lm <- lm(Y~., data=df_select)
+    lm_summary <- summary(model_lm)
+    # print(lm_summary)
+    coef[sim] <- lm_summary$coefficients[2,1]
+
+
+  }
+  selected_vars <- unlist(selected_vars)
+  selected_vars_count <- table(selected_vars)
+  print(selected_vars_count)
+  print(mean(coef))
+
+}
+
+
+result_inter_quan_x_w3 <-inter_qua_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
+
+```
+
+### Checking Effective size 
+```{r}
+set.seed(451)
+beta_1_values <- c(seq(0.1, 1, by = 0.1), 2:10)
+
+result_base <- numeric(length(beta_1_values))
+result_X_1_simulation <- numeric(length(beta_1_values))
+result_X_3_simulation <- numeric(length(beta_1_values))
+result_inter_x_w1_simulation <-  numeric(length(beta_1_values))
+result_inter_x_w3_simulation <-  numeric(length(beta_1_values))
+
+for (i in 1:length(beta_1_values)) {
+  beta_1 <- beta_1_values[i]
+  result_base[i] <- (Base_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 100)- beta_1) / beta_1
+  result_X_1_simulation[i] <- (X_1_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 100)- beta_1) / beta_1
+  result_X_3_simulation[i] <- (X_3_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 100)- beta_1) / beta_1
+  result_inter_x_w1_simulation[i] <- (inter_x_w1_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 100)- beta_1) / beta_1
+  result_inter_x_w3_simulation[i] <- (inter_x_w3_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 100)- beta_1) / beta_1
+}
+
+print(result)
+print(result_x_1_temp)
+
+
+library(ggplot2)
+tibble(beta_1_values = beta_1_values, result = result_base) %>% 
+  ggplot(aes(x=beta_1_values, y = result ))+
+  geom_point()
+
+
+
+tibble(beta_1_values = beta_1_values, result = result_X_1_simulation) %>% 
+  ggplot(aes(x=beta_1_values, y = result ))+
+  geom_point()
+
+
+tibble(beta_1_values = beta_1_values, result = result_X_3_simulation) %>% 
+  ggplot(aes(x=beta_1_values, y = result ))+
+  geom_point()
+
+
+tibble(beta_1_values = beta_1_values, result = result_inter_x_w1_simulation) %>% 
+  ggplot(aes(x=beta_1_values, y = result ))+
+  geom_point()
+
+
+tibble(beta_1_values = beta_1_values, result = result_inter_x_w3_simulation) %>% 
+  ggplot(aes(x=beta_1_values, y = result ))+
+  geom_point()
+
+```
+```{r}
+
+```
+
+
