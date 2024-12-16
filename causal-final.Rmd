@@ -13,6 +13,7 @@ library(dlsr)
 library(MASS)
 library(dplyr)
 library(stringr)
+library(ggplot2)
 ```
 
 Currently, we recreate the simulation process that has been done in the paper https://home.uchicago.edu/ourminsky/Variable_Selection.pdf. 
@@ -163,8 +164,8 @@ Base_simulation <- function(n , K , beta_1 , beta_k, n_simulations ) {
   }
 
   
-
-result_raw <- Base_simulation(n , K , beta_1 , beta_k , n_simulations = 100)
+#Example
+#result_raw <- Base_simulation(n , K , beta_1 , beta_k , n_simulations = 100)
 
 
 
@@ -220,8 +221,8 @@ X_1_simulation <- function(n , K , beta_1 , beta_k, n_simulations ) {
 }
 
 
-
-result_x_included <- X_1_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
+#example
+#result_x_included <- X_1_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
 
 
 ```
@@ -275,8 +276,8 @@ X_3_simulation <- function(n , K , beta_1 , beta_k, n_simulations ) {
 }
 
 
-
-result_x_included <- X_3_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
+#example
+#result_x_included <- X_3_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
 
 
 ```
@@ -339,7 +340,7 @@ inter_x_w1_simulation <- function(n , K , beta_1 , beta_k, n_simulations ) {
 
 
 
-result_interaction_x_w1 <- inter_x_w1_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
+#result_interaction_x_w1 <- inter_x_w1_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
 
 
 ```
@@ -401,7 +402,7 @@ inter_x_w3_simulation <- function(n , K , beta_1 , beta_k, n_simulations ) {
 }
 
 
-result_interaction_x_w3 <- inter_x_w3_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
+#result_interaction_x_w3 <- inter_x_w3_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
 
 
 ```
@@ -470,14 +471,14 @@ inter_qua_simulation <- function(n , K , beta_1 , beta_k, n_simulations ) {
 }
 
 
-result_inter_quan_x_w3 <-inter_qua_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
+#result_inter_quan_x_w3 <-inter_qua_simulation(n = 300, K = 20, beta_1 = 0.5, beta_k = beta_k, n_simulations = 100)
 
 ```
 
 ### Checking Effective size 
 ```{r}
 set.seed(451)
-beta_1_values <- c(seq(0.1, 1, by = 0.1), 2:10)
+beta_1_values <- c(seq(0.1, 1, by = 0.1), 2:50)
 
 result_base <- numeric(length(beta_1_values))
 result_X_1_simulation <- numeric(length(beta_1_values))
@@ -485,20 +486,25 @@ result_X_3_simulation <- numeric(length(beta_1_values))
 result_inter_x_w1_simulation <-  numeric(length(beta_1_values))
 result_inter_x_w3_simulation <-  numeric(length(beta_1_values))
 
+n = 300
+K = 20
+n_simulations = 300
+
 for (i in 1:length(beta_1_values)) {
   beta_1 <- beta_1_values[i]
-  result_base[i] <- (Base_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 100)- beta_1) / beta_1
-  result_X_1_simulation[i] <- (X_1_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 100)- beta_1) / beta_1
-  result_X_3_simulation[i] <- (X_3_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 100)- beta_1) / beta_1
-  result_inter_x_w1_simulation[i] <- (inter_x_w1_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 100)- beta_1) / beta_1
-  result_inter_x_w3_simulation[i] <- (inter_x_w3_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 100)- beta_1) / beta_1
+  result_base[i] <- (Base_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 300)- beta_1) / beta_1
+  result_X_1_simulation[i] <- (X_1_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 300)- beta_1) / beta_1
+  result_X_3_simulation[i] <- (X_3_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 300)- beta_1) / beta_1
+  result_inter_x_w1_simulation[i] <- (inter_x_w1_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 300)- beta_1) / beta_1
+  result_inter_x_w3_simulation[i] <- (inter_x_w3_simulation(n = 300, K = 20, beta_1 = beta_1, beta_k = beta_k, n_simulations = 300)- beta_1) / beta_1
 }
 
-print(result)
-print(result_x_1_temp)
+# print(result)
+# print(result_x_1_temp)
+```
 
 
-library(ggplot2)
+```{r}
 tibble(beta_1_values = beta_1_values, result = result_base) %>% 
   ggplot(aes(x=beta_1_values, y = result ))+
   geom_point()
